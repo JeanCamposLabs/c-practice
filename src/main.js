@@ -12,7 +12,7 @@ import './style.css';
 const $ = id => document.getElementById(id);
 const STORAGE = 'jean-c-practice-v1';
 let storageAvailable = true;
-let state = {files: {'main.c': welcomeCode}, active: 'main.c', stdin: '', args: '', standard: 'c17', theme: 'light', completed: [], selectedLesson: null};
+let state = {files: {'main.c': welcomeCode}, active: 'main.c', stdin: '', args: '', standard: 'c17', theme: 'light', wrapLines: true, completed: [], selectedLesson: null};
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE));
   if (saved && validFiles(saved.files)) state = {...state, ...saved, completed: Array.isArray(saved.completed) ? saved.completed : []};
@@ -20,6 +20,7 @@ try {
 if (!state.files[state.active] && state.files[state.active] !== '') state.active = Object.keys(state.files)[0];
 if (!['c99', 'c11', 'c17', 'c23'].includes(state.standard)) state.standard = 'c17';
 if (!['light', 'dark'].includes(state.theme)) state.theme = 'light';
+if (typeof state.wrapLines !== 'boolean') state.wrapLines = true;
 let switchingFile = false;
 let saveTimer;
 let worker, ready = false, pending = null, busy = false, waitingInput = false;
@@ -31,6 +32,8 @@ let toastTimer;
 let paneView = 'split';
 let compiledBinary = null;
 const theme = new Compartment();
+const wrapping = new Compartment();
+const wrapExtension = () => state.wrapLines ? EditorView.lineWrapping : [];
 const editorTheme = () => state.theme === 'dark' ? oneDark : syntaxHighlighting(defaultHighlightStyle);
 document.documentElement.dataset.theme = state.theme;
 
@@ -47,7 +50,7 @@ function saveSoon() { $('save-status').textContent = 'Saving…'; $('saved-dot')
 function cursorStatus(view) { const at = view.state.selection.main.head; const line = view.state.doc.lineAt(at); $('cursor-position').textContent = `Ln ${line.number}, Col ${at - line.from + 1}`; }
 const editorExtensions = [
     lineNumbers(), foldGutter(), history(), drawSelection(), indentOnInput(), bracketMatching(), closeBrackets(), autocompletion(),
-    highlightActiveLine(), highlightActiveLineGutter(), highlightSelectionMatches(), cpp(), theme.of(editorTheme()),
+    highlightActiveLine(), highlightActiveLineGutter(), highlightSelectionMatches(), cpp(), theme.of(editorTheme()), wrapping.of(wrapExtension()),
     keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, indentWithTab]),
     EditorState.tabSize.of(4),
     EditorView.updateListener.of(update => {
@@ -65,8 +68,9 @@ function selectFile(name) {
   fileStates.set(state.active, editor.state);
   state.active = name; switchingFile = true;
   const stored = fileStates.get(name);
-  if (stored && stored.doc.toString() === state.files[name]) { editor.setState(stored); editor.dispatch({effects: theme.reconfigure(editorTheme())}); }
+  if (stored && stored.doc.toString() === state.files[name]) editor.setState(stored);
   else editor.setState(EditorState.create({doc: state.files[name], extensions: editorExtensions}));
+  editor.dispatch({effects: [theme.reconfigure(editorTheme()), wrapping.reconfigure(wrapExtension())]});
   switchingFile = false;
   $('active-filename').textContent = name; cursorStatus(editor); renderFiles(); save();
   $('download-btn').textContent = `Download ${name.endsWith('.h') ? '.h' : '.c'} file`;
@@ -293,12 +297,22 @@ function setPaneView(view) {
   requestAnimationFrame(() => { if (atBottom && paneView !== 'editor') output.scrollTop = output.scrollHeight; });
 }
 function togglePaneView(view) { setPaneView(paneView === view ? 'split' : view); }
+function updateWrapButton() {
+  $('wrap-btn').textContent = `Wrap: ${state.wrapLines ? 'on' : 'off'}`;
+  $('wrap-btn').setAttribute('aria-pressed', String(state.wrapLines));
+}
+function toggleWrap() {
+  state.wrapLines = !state.wrapLines;
+  editor.dispatch({effects: wrapping.reconfigure(wrapExtension())});
+  updateWrapButton(); save();
+}
 // Capture workspace shortcuts before editor bindings or browser defaults consume them.
 window.addEventListener('keydown', event => {
   if (event.isComposing || document.querySelector('dialog[open]')) return;
   const key = event.key.toLowerCase();
   const mod = (event.metaKey || event.ctrlKey) && !event.altKey;
-  if (mod && event.shiftKey && (event.code === 'Digit1' || event.code === 'Digit2')) { event.preventDefault(); event.stopPropagation(); togglePaneView(event.code === 'Digit1' ? 'editor' : 'terminal'); }
+  if (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && event.code === 'KeyZ') { event.preventDefault(); event.stopPropagation(); toggleWrap(); }
+  else if (mod && event.shiftKey && (event.code === 'Digit1' || event.code === 'Digit2')) { event.preventDefault(); event.stopPropagation(); togglePaneView(event.code === 'Digit1' ? 'editor' : 'terminal'); }
   else if (key === 'escape' && paneView !== 'split') { event.preventDefault(); event.stopPropagation(); setPaneView('split'); }
   else if (mod && key === 'enter') { event.preventDefault(); event.stopPropagation(); event.shiftKey ? compileOnly() : compileAndRun(); }
   else if (event.metaKey && !event.ctrlKey && !event.altKey && key === 'k') { event.preventDefault(); event.stopPropagation(); clearTerminal(); }
@@ -322,6 +336,7 @@ $('run-btn').onclick = compileAndRun; $('compile-btn').onclick = compileOnly; $(
 $('clear-btn').onclick = clearTerminal;
 $('expand-editor-btn').onclick = () => togglePaneView('editor');
 $('expand-terminal-btn').onclick = () => togglePaneView('terminal');
+$('wrap-btn').onclick = toggleWrap; updateWrapButton();
 $('binary-btn').onclick = () => {
   $('workspace-dialog').close();
   return withBusy(async () => {

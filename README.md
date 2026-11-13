@@ -29,6 +29,8 @@ Arguments can be set in the workspace menu or supplied to `./main`. Quoted argum
 
 ## Keyboard shortcuts
 
+- **Option/Alt+Z** — toggle word wrap. Wrapping is on by default and saved in this browser; long lines fit the editor width without inserting newlines into your source. The **Wrap** button in the editor footer also toggles it.
+
 - **⌘/Ctrl+Enter** — compile and run; add **Shift** to compile only.
 - **⌘K** — clear terminal output from either pane; **Ctrl+L** also clears from the terminal. Neither interrupts a running program or discards pending input.
 - **Ctrl+C** — stop a running program, or cancel the current terminal line. **⌘C** keeps its normal copy behavior.

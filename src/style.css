@@ -44,6 +44,7 @@ kbd { color: var(--muted); font-size: 10px; font-weight: 400; white-space: nowra
 .stop-button { font-size: 11px; color: var(--error); padding: 7px; border-radius: 4px; }
 #editor { flex: 1; min-height: 0; overflow: hidden; }
 .editor-footer { display: flex; align-items: center; justify-content: space-between; flex: none; padding: 5px 22px 8px; color: var(--muted); font: 10px var(--mono); }
+#wrap-btn { padding: 2px 5px; border-radius: 3px; font: inherit; }
 .console-panel { border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .console-header { height: 38px; padding: 0 22px; border-bottom: 1px solid var(--line); }
 .console-title { display: flex; align-items: center; gap: 14px; min-width: 0; font-size: 11px; }
