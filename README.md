@@ -37,6 +37,7 @@ Arguments can be set in the workspace menu or supplied to `./main`. Quoted argum
 - **Ctrl+U / Ctrl+K** — delete before / after the cursor; **Ctrl+W** deletes the previous word.
 - **↑ / ↓** or **Ctrl+P / Ctrl+N** — browse command history and return to the unfinished command.
 - **Ctrl+`** — switch focus between editor and terminal.
+- **⌘/Ctrl+Shift+1** — toggle the editor full screen; **⌘/Ctrl+Shift+2** — toggle the terminal full screen. Press the same shortcut again, or **Escape**, to restore both panes. Expand buttons in each header do the same. Run and Stop remain available in the full-screen terminal. If a program needs input while the editor is full screen, the terminal opens automatically.
 - **⌘/Ctrl+S** — save locally. The editor also supports its usual copy, paste, undo, redo, find, and Mac text navigation shortcuts.
 
 ## Browser runtime

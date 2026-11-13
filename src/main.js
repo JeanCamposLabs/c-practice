@@ -28,6 +28,7 @@ let programOutput = '', outputBytes = 0, phase = 'idle', currentLesson = state.s
 let runContext = null;
 let commandHistory = [], historyIndex = 0, historyDraft = '';
 let toastTimer;
+let paneView = 'split';
 let compiledBinary = null;
 const theme = new Compartment();
 const editorTheme = () => state.theme === 'dark' ? oneDark : syntaxHighlighting(defaultHighlightStyle);
@@ -123,7 +124,7 @@ function startWorker() {
       if (outputBytes > 150000) { stop('Stopped: output exceeded 150 KB. Check for an endless loop.'); return; }
       print(data.text, data.stream);
     }
-    if (data.type === 'input') { waitingInput = true; clearTimeout(operationTimer); buttons(); status('Waiting for terminal input', 'loading'); $('terminal-input').focus(); }
+    if (data.type === 'input') { waitingInput = true; clearTimeout(operationTimer); buttons(); status('Waiting for terminal input', 'loading'); if (paneView === 'editor') setPaneView('terminal'); $('terminal-input').focus(); }
     if (data.type === 'preparing-input') { status('Preparing terminal input…', 'loading'); watchdog(90000, 'Terminal input setup timed out. Please run again.'); }
     if (data.type === 'running') { phase = 'run'; status('Program running', 'loading'); watchdog(10000, 'Stopped after 10 seconds of execution. Check for an endless loop.'); }
     if (data.type === 'compiled' || data.type === 'finished') { clearTimeout(operationTimer); const p = pending; pending = null; p?.resolve(data); }
@@ -275,17 +276,40 @@ function download(name, content, mime = 'text/plain') {
 }
 function clearTerminal() { $('terminal-output').replaceChildren(); }
 function saveShortcut() { save(); toast(storageAvailable ? 'Saved in this browser' : 'Storage unavailable. Download a backup.'); }
+function setPaneView(view) {
+  const previous = paneView, output = $('terminal-output');
+  const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 70;
+  paneView = view; $('workspace').dataset.view = view;
+  (view === 'terminal' ? $('terminal-actions') : $('editor-actions')).prepend($('run-controls'));
+  for (const pane of ['editor', 'terminal']) {
+    const expanded = view === pane, button = $(`expand-${pane}-btn`);
+    button.setAttribute('aria-pressed', String(expanded));
+    button.setAttribute('aria-label', expanded ? 'Restore split view' : `Expand ${pane}`);
+    button.title = expanded ? 'Restore split view (Escape)' : `Expand ${pane} (⌘/Ctrl+Shift+${pane === 'editor' ? '1' : '2'})`;
+  }
+  editor.requestMeasure();
+  if (view === 'terminal' || (view === 'split' && previous === 'terminal')) $('terminal-input').focus();
+  else editor.focus();
+  requestAnimationFrame(() => { if (atBottom && paneView !== 'editor') output.scrollTop = output.scrollHeight; });
+}
+function togglePaneView(view) { setPaneView(paneView === view ? 'split' : view); }
 // Capture workspace shortcuts before editor bindings or browser defaults consume them.
 window.addEventListener('keydown', event => {
   if (event.isComposing || document.querySelector('dialog[open]')) return;
   const key = event.key.toLowerCase();
   const mod = (event.metaKey || event.ctrlKey) && !event.altKey;
-  if (mod && key === 'enter') { event.preventDefault(); event.stopPropagation(); event.shiftKey ? compileOnly() : compileAndRun(); }
+  if (mod && event.shiftKey && (event.code === 'Digit1' || event.code === 'Digit2')) { event.preventDefault(); event.stopPropagation(); togglePaneView(event.code === 'Digit1' ? 'editor' : 'terminal'); }
+  else if (key === 'escape' && paneView !== 'split') { event.preventDefault(); event.stopPropagation(); setPaneView('split'); }
+  else if (mod && key === 'enter') { event.preventDefault(); event.stopPropagation(); event.shiftKey ? compileOnly() : compileAndRun(); }
   else if (event.metaKey && !event.ctrlKey && !event.altKey && key === 'k') { event.preventDefault(); event.stopPropagation(); clearTerminal(); }
   else if (mod && key === 's') { event.preventDefault(); event.stopPropagation(); saveShortcut(); }
   else if (event.ctrlKey && !event.metaKey && !event.altKey && key === 'l' && document.activeElement?.closest('.console-panel')) { event.preventDefault(); event.stopPropagation(); clearTerminal(); }
   else if (event.ctrlKey && !event.metaKey && !event.altKey && key === 'c' && busy) { event.preventDefault(); event.stopPropagation(); stop(); }
-  else if (event.ctrlKey && !event.metaKey && event.code === 'Backquote') { event.preventDefault(); event.stopPropagation(); document.activeElement?.closest('.console-panel') ? editor.focus() : $('terminal-input').focus(); }
+  else if (event.ctrlKey && !event.metaKey && event.code === 'Backquote') {
+    event.preventDefault(); event.stopPropagation();
+    if (paneView !== 'split') setPaneView(paneView === 'editor' ? 'terminal' : 'editor');
+    else document.activeElement?.closest('.console-panel') ? editor.focus() : $('terminal-input').focus();
+  }
 }, true);
 function recallCommand(direction) {
   const input = $('terminal-input');
@@ -296,6 +320,8 @@ function recallCommand(direction) {
 }
 $('run-btn').onclick = compileAndRun; $('compile-btn').onclick = compileOnly; $('stop-btn').onclick = () => stop();
 $('clear-btn').onclick = clearTerminal;
+$('expand-editor-btn').onclick = () => togglePaneView('editor');
+$('expand-terminal-btn').onclick = () => togglePaneView('terminal');
 $('binary-btn').onclick = () => {
   $('workspace-dialog').close();
   return withBusy(async () => {

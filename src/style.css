@@ -24,10 +24,15 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 code, pre, kbd { font-family: var(--mono); }
 kbd { color: var(--muted); font-size: 10px; font-weight: 400; white-space: nowrap; }
 .workspace { height: 100dvh; display: grid; grid-template-rows: minmax(180px, 1fr) minmax(160px, 30%); }
+.workspace[data-view="editor"], .workspace[data-view="terminal"] { grid-template-rows: minmax(0, 1fr); }
+.workspace[data-view="editor"] .console-panel, .workspace[data-view="terminal"] .editor-panel { display: none; }
+.workspace[data-view="terminal"] .console-panel { border-top: 0; }
 .editor-panel { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .editor-header, .console-header { display: flex; align-items: center; justify-content: space-between; flex: none; gap: 16px; padding: 0 18px; background: var(--chrome); }
 .editor-header { height: 48px; border-bottom: 1px solid var(--line); }
 .editor-heading, .toolbar-actions { display: flex; align-items: center; min-width: 0; gap: 12px; }
+.toolbar-actions { flex: none; }
+.run-controls { display: flex; align-items: center; gap: 12px; }
 #active-filename { font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #saved-dot { font-size: 6px; color: var(--muted); margin-left: -5px; }
 #saved-dot.unsaved { color: #b18c3e; }
@@ -49,7 +54,7 @@ kbd { color: var(--muted); font-size: 10px; font-weight: 400; white-space: nowra
 .tiny-dot.error { background: var(--error); }
 .tiny-dot.loading { background: #b18c3e; }
 .quiet-button { font-size: 11px; color: var(--muted); padding: 6px 8px; border-radius: 4px; white-space: nowrap; }
-#clear-btn { display: flex; align-items: center; gap: 14px; margin-right: -8px; }
+#clear-btn { display: flex; align-items: center; gap: 14px; }
 .terminal-area { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 12px 22px 14px; }
 .terminal-output { flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 var(--mono); color: var(--muted); }
 .terminal-command { display: block; color: var(--muted); margin: 7px 0 3px; }
