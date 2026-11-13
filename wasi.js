@@ -5,6 +5,7 @@ export async function runWasi(binary, {stdin = '', args = [], onOutput = () => {
   let offset = 0;
   let exitCode = 0;
   const input = encoder.encode(stdin);
+  let pendingRead, resolvedRead, asyncStack;
   const argv = ['main', ...args].map(s => encoder.encode(s + '\0'));
   const view = () => new DataView(instance.exports.memory.buffer);
   const bytes = () => new Uint8Array(instance.exports.memory.buffer);
@@ -27,17 +28,31 @@ export async function runWasi(binary, {stdin = '', args = [], onOutput = () => {
     },
     fd_read(fd, iovs, count, read) {
       if (fd !== 0) return 8;
+      let capacity = 0;
+      for (let i = 0; i < count; i++) capacity += view().getUint32(iovs + i * 8 + 4, true);
+      if (!capacity) { u32(read, 0); return 0; }
+      // Show prompts without a trailing newline before waiting, as a terminal does.
+      if (instance.exports.asyncify_get_state?.() !== 2) instance.exports.fflush?.(0);
+      let chunk;
+      if (instance.exports.asyncify_get_state?.() === 2) {
+        instance.exports.asyncify_stop_rewind(); chunk = resolvedRead; resolvedRead = null;
+      } else if (offset < input.length) {
+        chunk = input.subarray(offset, offset + capacity); offset += chunk.length;
+      } else {
+        chunk = readInput ? readInput(capacity) : new Uint8Array();
+        if (chunk && typeof chunk.then === 'function') {
+          if (!asyncStack) throw new Error('This program was not prepared for asynchronous terminal input.');
+          pendingRead = chunk; instance.exports.asyncify_start_unwind(asyncStack); return 0;
+        }
+      }
+      if (!(chunk instanceof Uint8Array) || chunk.length > capacity) throw new Error('Invalid terminal input response.');
       let total = 0;
       for (let i = 0; i < count; i++) {
         const ptr = view().getUint32(iovs + i * 8, true);
         const len = view().getUint32(iovs + i * 8 + 4, true);
-        if (!len) continue;
-        let chunk;
-        if (offset < input.length) { chunk = input.subarray(offset, offset + len); offset += chunk.length; }
-        else chunk = readInput ? readInput(len) : new Uint8Array();
-        bytes().set(chunk, ptr); total += chunk.length;
-        // A terminal read returns available input without waiting to fill all iovecs.
-        if (chunk.length < len) break;
+        const part = chunk.subarray(total, total + len);
+        bytes().set(part, ptr); total += part.length;
+        if (total === chunk.length) break;
       }
       u32(read, total); return 0;
     },
@@ -65,6 +80,19 @@ export async function runWasi(binary, {stdin = '', args = [], onOutput = () => {
     }
   }
   instance = await WebAssembly.instantiate(module, {wasi_snapshot_preview1: wasi});
-  try { instance.exports._start(); } catch (e) { if (e !== exitSignal) throw e; }
-  return exitCode;
+  if (instance.exports.asyncify_start_unwind) {
+    // Allocate through libc so C's malloc cannot reuse the suspended call stack.
+    asyncStack = instance.exports.malloc(1024 * 1024 + 8);
+    if (!asyncStack) throw new Error('Not enough memory for terminal input.');
+    u32(asyncStack, asyncStack + 8); u32(asyncStack + 4, asyncStack + 8 + 1024 * 1024);
+  }
+  try {
+    for (;;) {
+      try { instance.exports._start(); } catch (e) { if (e !== exitSignal) throw e; }
+      if (instance.exports.asyncify_get_state?.() !== 1) return exitCode;
+      instance.exports.asyncify_stop_unwind();
+      resolvedRead = await pendingRead; pendingRead = null;
+      instance.exports.asyncify_start_rewind(asyncStack);
+    }
+  } finally { if (asyncStack) instance.exports.free(asyncStack); }
 }

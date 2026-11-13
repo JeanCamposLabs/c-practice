@@ -1,7 +1,10 @@
 import {runWasi} from './wasi.js';
+import {prepareAsyncInput} from './async-input.js';
 let compiler;
 let binary;
+let asyncBinary;
 let inputState;
+let resolveInput;
 let pendingInput = new Uint8Array();
 let inputEnded = false;
 const decoders = {stdout: new TextDecoder(), stderr: new TextDecoder()};
@@ -28,16 +31,26 @@ function readInput(len) {
   pendingInput = new Uint8Array(inputState.buffer, 8, size).slice();
   const result = pendingInput.slice(0, len); pendingInput = pendingInput.slice(len); return result;
 }
+async function readAsyncInput(len) {
+  if (inputEnded) return new Uint8Array();
+  if (!pendingInput.length) {
+    const data = await new Promise(resolve => { resolveInput = resolve; emit('input'); });
+    if (data.eof) { inputEnded = true; return new Uint8Array(); }
+    pendingInput = data.bytes;
+  }
+  const result = pendingInput.slice(0, len); pendingInput = pendingInput.slice(len); return result;
+}
 onmessage = async ({data}) => {
   try {
+    if (data.type === 'stdin') { const resolve = resolveInput; resolveInput = null; resolve?.(data); return; }
     if (data.type === 'load') { await load(); emit('ready'); return; }
     if (data.type === 'compile') {
       const clang = await load();
-      binary = null;
+      binary = null; asyncBinary = null;
       const start = performance.now();
       emit('status', {text: 'Compiling…'});
       const flags = data.flags || ['-std=c17', '-Wall', '-Wextra', '-O0'];
-      const files = await clang.commands.clang([...flags, ...data.sources, '-lm', '-o', 'main.wasm'], data.files, {
+      const files = await clang.commands.clang([...flags, ...data.sources, '-lm', '-Wl,--export=malloc', '-Wl,--export=free', '-Wl,--export=fflush', '-o', 'main.wasm'], data.files, {
         decodeASCII: false,
         stdout: chunk => { if (chunk) emit('output', {stream: 'diagnostic', text: decoders.stdout.decode(chunk, {stream: true})}); },
         stderr: chunk => { if (chunk) emit('output', {stream: 'diagnostic', text: decoders.stderr.decode(chunk, {stream: true})}); }
@@ -50,12 +63,14 @@ onmessage = async ({data}) => {
     if (data.type === 'run') {
       if (!binary) throw new Error('Compile your program first.');
       inputState = data.inputBuffer ? new Int32Array(data.inputBuffer) : null;
-      pendingInput = new Uint8Array(); inputEnded = false;
+      pendingInput = new Uint8Array(); inputEnded = false; resolveInput = null;
+      const asyncLive = data.interactive && !inputState;
+      if (asyncLive && !asyncBinary) asyncBinary = await prepareAsyncInput(binary, () => emit('preparing-input'));
       emit('running');
       const start = performance.now();
-      const code = await runWasi(binary, {
+      const code = await runWasi(asyncLive ? asyncBinary : binary, {
         stdin: data.stdin, args: data.args,
-        readInput: inputState ? readInput : null,
+        readInput: inputState ? readInput : asyncLive ? readAsyncInput : null,
         onOutput: (stream, bytes) => emit('output', {stream, text: decoders[stream].decode(bytes, {stream: true})})
       });
       for (const stream of ['stdout', 'stderr']) { const text = decoders[stream].decode(); if (text) emit('output', {stream, text}); }
