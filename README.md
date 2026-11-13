@@ -4,12 +4,13 @@ Jean’s browser workspace for learning C. Open **[C Practice](https://jeancampo
 
 ## Get started
 
-1. Edit `main.c` and click **Run code**, or press **Ctrl+Enter** / **⌘+Enter**.
-2. For `scanf` / `fgets`, put input in **Program input** before running. If **Live terminal input** is enabled, you can also type into the terminal when the program asks for input. **Ctrl+D** sends EOF.
-3. Try the eight exercises in the practice path. Each opens a separate file and compares your program’s output with the exercise’s sample output. This checks the example, not every possible input.
-4. Download individual files or **Back up workspace** to save a JSON backup. Import `.c`, `.h`, or a workspace backup to restore work.
+1. Edit `main.c` and click **Run**, or press **⌘+Enter** / **Ctrl+Enter** from either pane.
+2. Use the **☰ workspace menu** for files, input, arguments, compiler settings, exercises, and the C reference. The screen opens with just the editor and terminal, in light mode. Dark mode is available under Appearance.
+3. For `scanf` / `fgets`, type into the terminal when prompted, or add input under **Program input & arguments** before running. **Ctrl+D** sends EOF.
+4. Choose **Download .c file** to save the active source. **Download binary (.wasm)** builds the current program if needed and saves its WASI WebAssembly executable. This binary runs in a compatible WASI runtime; it is not a native macOS executable. Header files download as `.h`.
+5. **Back up workspace** saves all files and progress to JSON. Import `.c`, `.h`, or a workspace backup to restore work.
 
-The compiler downloads about **27 MB on the first visit**. Compilation and execution happen on your device; source code is never submitted to a compiler server. Files, program input, selected standard, and exercise progress are saved in this browser’s local storage. Clearing browser data removes these saves. They do not sync between computers; use backups to move work.
+The compiler downloads about **27 MB on the first visit**. Compilation and execution happen on your device; source code is never submitted to a compiler server. Files, program input, selected standard, appearance, and exercise progress are saved in this browser’s local storage. Clearing browser data removes these saves. They do not sync between computers; use backups to move work.
 
 ## Editor and terminal
 
@@ -24,7 +25,19 @@ clang main.c helpers.c -Wall -Wextra -o main
 ./main
 ```
 
-Arguments can be set in the input panel or supplied to `./main`. Quoted arguments are supported. The math library is linked automatically.
+Arguments can be set in the workspace menu or supplied to `./main`. Quoted arguments are supported. The math library is linked automatically.
+
+## Keyboard shortcuts
+
+- **⌘/Ctrl+Enter** — compile and run; add **Shift** to compile only.
+- **⌘K** — clear terminal output from either pane; **Ctrl+L** also clears from the terminal. Neither interrupts a running program or discards pending input.
+- **Ctrl+C** — stop a running program, or cancel the current terminal line. **⌘C** keeps its normal copy behavior.
+- **Ctrl+D** — send EOF when a program is waiting for live input.
+- **Ctrl+A / Ctrl+E** — move to the start / end of the terminal line.
+- **Ctrl+U / Ctrl+K** — delete before / after the cursor; **Ctrl+W** deletes the previous word.
+- **↑ / ↓** or **Ctrl+P / Ctrl+N** — browse command history and return to the unfinished command.
+- **Ctrl+`** — switch focus between editor and terminal.
+- **⌘/Ctrl+S** — save locally. The editor also supports its usual copy, paste, undo, redo, find, and Mac text navigation shortcuts.
 
 ## Browser runtime
 

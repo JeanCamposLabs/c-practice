@@ -1,7 +1,7 @@
-import {EditorState} from '@codemirror/state';
+import {Compartment, EditorState} from '@codemirror/state';
 import {EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection} from '@codemirror/view';
 import {defaultKeymap, history, historyKeymap, indentWithTab} from '@codemirror/commands';
-import {bracketMatching, indentOnInput, foldGutter} from '@codemirror/language';
+import {bracketMatching, indentOnInput, foldGutter, syntaxHighlighting, defaultHighlightStyle} from '@codemirror/language';
 import {closeBrackets, closeBracketsKeymap, autocompletion} from '@codemirror/autocomplete';
 import {searchKeymap, highlightSelectionMatches} from '@codemirror/search';
 import {cpp} from '@codemirror/lang-cpp';
@@ -12,21 +12,26 @@ import './style.css';
 const $ = id => document.getElementById(id);
 const STORAGE = 'jean-c-practice-v1';
 let storageAvailable = true;
-let state = {files: {'main.c': welcomeCode}, active: 'main.c', stdin: '', args: '', standard: 'c17', completed: [], selectedLesson: null};
+let state = {files: {'main.c': welcomeCode}, active: 'main.c', stdin: '', args: '', standard: 'c17', theme: 'light', completed: [], selectedLesson: null};
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE));
   if (saved && validFiles(saved.files)) state = {...state, ...saved, completed: Array.isArray(saved.completed) ? saved.completed : []};
 } catch { storageAvailable = false; }
 if (!state.files[state.active] && state.files[state.active] !== '') state.active = Object.keys(state.files)[0];
 if (!['c99', 'c11', 'c17', 'c23'].includes(state.standard)) state.standard = 'c17';
+if (!['light', 'dark'].includes(state.theme)) state.theme = 'light';
 let switchingFile = false;
 let saveTimer;
 let worker, ready = false, pending = null, busy = false, waitingInput = false;
 let operationTimer, compiledSignature = null, executableName = 'main', inputBuffer;
 let programOutput = '', outputBytes = 0, phase = 'idle', currentLesson = state.selectedLesson;
 let runContext = null;
-let commandHistory = [], historyIndex = 0;
+let commandHistory = [], historyIndex = 0, historyDraft = '';
 let toastTimer;
+let compiledBinary = null;
+const theme = new Compartment();
+const editorTheme = () => state.theme === 'dark' ? oneDark : syntaxHighlighting(defaultHighlightStyle);
+document.documentElement.dataset.theme = state.theme;
 
 function validFiles(files) {
   return files && typeof files === 'object' && !Array.isArray(files) && Object.keys(files).length > 0 && Object.entries(files).every(([name, content]) => /^[\w-]+\.(c|h)$/.test(name) && typeof content === 'string');
@@ -41,15 +46,15 @@ function saveSoon() { $('save-status').textContent = 'Saving…'; $('saved-dot')
 function cursorStatus(view) { const at = view.state.selection.main.head; const line = view.state.doc.lineAt(at); $('cursor-position').textContent = `Ln ${line.number}, Col ${at - line.from + 1}`; }
 const editorExtensions = [
     lineNumbers(), foldGutter(), history(), drawSelection(), indentOnInput(), bracketMatching(), closeBrackets(), autocompletion(),
-    highlightActiveLine(), highlightActiveLineGutter(), highlightSelectionMatches(), cpp(), oneDark,
-    keymap.of([{key: 'Mod-Enter', run: () => { compileAndRun(); return true; }}, {key: 'Mod-Shift-Enter', run: () => { compileOnly(); return true; }}, {key: 'Mod-s', run: () => { save(); toast(storageAvailable ? 'Saved in this browser' : 'Storage unavailable. Download a backup.'); return true; }}, ...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, indentWithTab]),
+    highlightActiveLine(), highlightActiveLineGutter(), highlightSelectionMatches(), cpp(), theme.of(editorTheme()),
+    keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, indentWithTab]),
     EditorState.tabSize.of(4),
     EditorView.updateListener.of(update => {
       if (update.docChanged && !switchingFile) { state.files[state.active] = update.state.doc.toString(); saveSoon(); }
       if (update.selectionSet || update.docChanged) cursorStatus(update.view);
     }),
     EditorView.contentAttributes.of({'aria-label': 'C source code', spellcheck: 'false'}),
-    EditorView.theme({'&': {height: '100%', backgroundColor: '#171e23'}, '.cm-scroller': {overflow: 'auto', fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace', fontSize: '14px', lineHeight: '1.8'}, '.cm-content': {padding: '18px 0'}, '.cm-gutters': {backgroundColor: '#171e23', border: 'none', color: '#52616d', paddingRight: '10px'}, '.cm-activeLine': {backgroundColor: '#ffffff03'}, '.cm-activeLineGutter': {backgroundColor: '#ffffff05'}, '.cm-focused': {outline: 'none'}})
+    EditorView.theme({'&': {height: '100%', backgroundColor: 'var(--bg)', color: 'var(--text)'}, '&.cm-focused': {outline: 'none'}, '.cm-scroller': {overflow: 'auto', fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace', fontSize: '14px', lineHeight: '1.8'}, '.cm-content': {padding: '22px 0', caretColor: 'var(--text)'}, '.cm-gutters': {backgroundColor: 'var(--bg)', border: 'none', color: 'var(--muted)', padding: '0 12px'}, '.cm-activeLine': {backgroundColor: 'var(--chrome)'}, '.cm-activeLineGutter': {backgroundColor: 'var(--chrome)'}, '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {backgroundColor: 'var(--selection)'}, '.cm-cursor': {borderLeftColor: 'var(--text)'}, '.cm-panels': {backgroundColor: 'var(--chrome)', color: 'var(--text)'}, '.cm-search input, .cm-search button': {color: 'var(--text)', background: 'var(--bg)'}})
 ];
 const editor = new EditorView({state: EditorState.create({doc: state.files[state.active], extensions: editorExtensions}), parent: $('editor')});
 // Reconfigure the document without sharing undo history between different files.
@@ -59,10 +64,11 @@ function selectFile(name) {
   fileStates.set(state.active, editor.state);
   state.active = name; switchingFile = true;
   const stored = fileStates.get(name);
-  if (stored && stored.doc.toString() === state.files[name]) editor.setState(stored);
+  if (stored && stored.doc.toString() === state.files[name]) { editor.setState(stored); editor.dispatch({effects: theme.reconfigure(editorTheme())}); }
   else editor.setState(EditorState.create({doc: state.files[name], extensions: editorExtensions}));
   switchingFile = false;
   $('active-filename').textContent = name; cursorStatus(editor); renderFiles(); save();
+  $('download-btn').textContent = `Download ${name.endsWith('.h') ? '.h' : '.c'} file`;
 }
 function renderFiles() {
   $('file-list').replaceChildren();
@@ -70,7 +76,7 @@ function renderFiles() {
     const row = document.createElement('div'); row.className = 'file-row' + (name === state.active ? ' selected' : '');
     const button = document.createElement('button'); button.className = 'file-button'; button.setAttribute('aria-label', name); button.title = name;
     const icon = document.createElement('span'); icon.className = 'c-icon'; icon.textContent = name.endsWith('.h') ? 'H' : 'C';
-    const label = document.createElement('span'); label.textContent = name; button.append(icon, label); button.onclick = () => selectFile(name);
+    const label = document.createElement('span'); label.textContent = name; button.append(icon, label); button.onclick = () => { selectFile(name); $('workspace-dialog').close(); editor.focus(); };
     const remove = document.createElement('button'); remove.className = 'delete-file'; remove.textContent = '×'; remove.title = `Delete ${name}`; remove.setAttribute('aria-label', `Delete ${name}`);
     remove.onclick = () => {
       if (Object.keys(state.files).length === 1) return toast('Keep at least one file in your workspace.');
@@ -94,10 +100,12 @@ function print(text, type = 'info') {
 function status(text, kind = 'ready') { $('compiler-status').replaceChildren(); const dot = document.createElement('span'); dot.className = 'tiny-dot ' + kind; $('compiler-status').append(dot, document.createTextNode(' ' + text)); }
 function buttons() {
   $('compile-btn').disabled = busy || !ready; $('run-btn').disabled = busy || !ready;
-  $('stop-btn').disabled = !busy; $('standard').disabled = busy;
+  $('binary-btn').disabled = busy || !ready;
+  $('stop-btn').disabled = !busy; $('stop-btn').hidden = !busy; $('standard').disabled = busy;
   $('terminal-badge').textContent = waitingInput ? 'INPUT' : busy ? 'RUNNING' : 'READY';
   $('terminal-badge').classList.toggle('is-active', busy);
-  $('terminal-input').disabled = busy && !waitingInput;
+  // Keep the prompt focusable while running so Ctrl+C can always interrupt.
+  $('terminal-input').readOnly = busy && !waitingInput;
   $('terminal-input').placeholder = waitingInput ? 'Type input and press Enter (Ctrl+D ends input)' : 'Type help for commands';
   $('prompt-symbol').textContent = waitingInput ? 'stdin ›' : '❯';
 }
@@ -134,15 +142,15 @@ function stop(message = 'Program stopped.') {
   const p = pending; pending = null; p?.reject(new Error('stopped'));
   busy = false; phase = 'idle'; print(`\n${message}\n`, 'error'); startWorker();
 }
-function signature() { return JSON.stringify([state.files, state.standard]); }
+function signature() { return JSON.stringify([state.files, state.standard, state.active]); }
 async function compile(flags, sources) {
-  save(); phase = 'compile'; compiledSignature = null; executableName = 'main'; outputBytes = 0;
+  save(); phase = 'compile'; compiledSignature = null; compiledBinary = null; executableName = 'main'; outputBytes = 0;
   const selectedSources = sources || (state.active.endsWith('.c') ? [state.active] : Object.keys(state.files).filter(n => n.endsWith('.c')));
   if (!selectedSources.length) throw new Error('Create a .c source file first.');
   print(`❯ clang ${selectedSources.join(' ')} ${(flags || [`-std=${state.standard}`, '-Wall', '-Wextra', '-O0']).join(' ')} -lm -o main\n`, 'command');
   watchdog(90000, 'Compilation timed out. The compiler has been restarted.');
   const result = await request('compile', {files: {...state.files}, sources: selectedSources, flags: flags || [`-std=${state.standard}`, '-Wall', '-Wextra', '-O0']});
-  compiledSignature = signature();
+  compiledSignature = signature(); compiledBinary = result.binary;
   print(`Compiled successfully · ${(result.ms / 1000).toFixed(2)}s · ${(result.size / 1024).toFixed(1)} KB\n`, 'success'); status('Compiled successfully'); return result;
 }
 async function execute(args) {
@@ -185,7 +193,7 @@ async function command(text) {
   const [cmd, ...args] = splitArgs(text);
   if (!cmd) return;
   if (!['run', 'compile', 'clang', 'gcc'].includes(cmd) && !cmd.startsWith('./')) print(`❯ ${text}\n`, 'command');
-  if (cmd === 'help') print('A browser practice terminal. Commands:\n  run                 Compile and run the active C file\n  compile             Compile the active C file\n  clang main.c -o main Compile with your own flags / multiple .c files\n  ./main [arguments]  Run the last compiled program\n  ls                  List workspace files\n  cat main.c          Show a file\n  clear               Clear terminal output\n  pwd                 Show the virtual workspace path\n  help                Show these commands\n\nInput: use the stdin panel, or enable Live terminal input.\nCtrl+D sends end-of-input. Stop halts a running program.\nThis terminal supports these commands; it is not a full OS shell.\n');
+  if (cmd === 'help') print('Commands:\n  run                 Compile and run the active C file\n  compile             Compile the active C file\n  clang main.c -o main Compile with flags / multiple .c files\n  ./main [arguments]  Run the last compiled program\n  ls                  List workspace files\n  cat main.c          Show a file\n  clear               Clear terminal output\n  pwd                 Show the virtual workspace path\n  help                Show these commands\n\n⌘/Ctrl+Enter runs · ⌘K or Ctrl+L clears · Ctrl+C stops\nCtrl+D ends live input · ↑/↓ browses command history\nCtrl+A/E moves to start/end · Ctrl+U/K deletes before/after cursor\nCtrl+W deletes the previous word · Ctrl+` switches panes\n\nUse the workspace menu for input settings, source and binary downloads.\nThis is a browser practice terminal with the commands above.\n');
   else if (cmd === 'clear') $('terminal-output').replaceChildren();
   else if (cmd === 'ls') print(Object.keys(state.files).join('  ') + '\n');
   else if (cmd === 'pwd') print('/c-practice\n');
@@ -234,14 +242,15 @@ function renderLessons() {
 function showLesson(index) {
   if (!lessons[index]) return;
   currentLesson = index; state.selectedLesson = index; save(); renderLessons();
-  const lesson = lessons[index]; $('lesson-panel').classList.add('open');
+  const lesson = lessons[index]; $('workspace-dialog').close();
+  if (!$('lesson-panel').open) $('lesson-panel').showModal();
   $('lesson-content').innerHTML = `<div class="lesson-kicker">EXERCISE ${String(index + 1).padStart(2, '0')} / 08</div><h2></h2><p class="lesson-description"></p><div class="concept-card"><span>THE IDEA</span><p></p></div><h3>Your challenge</h3><p class="lesson-task"></p><div class="expected-label">EXPECTED OUTPUT</div><pre class="expected-output"></pre><button id="load-lesson" class="primary-button">Open starter file <span>↗</span></button><p class="starter-note">Opens in a separate file. Your other files stay saved.</p><details class="hint"><summary>Need a hint?</summary><p></p></details><div id="lesson-result"></div><div class="lesson-bottom">${lesson.tag}</div>`;
   const panel = $('lesson-content'); panel.querySelector('h2').textContent = lesson.title; panel.querySelector('.lesson-description').textContent = lesson.description; panel.querySelector('.concept-card p').textContent = lesson.concept; panel.querySelector('.lesson-task').textContent = lesson.task; panel.querySelector('.expected-output').textContent = lesson.expected; panel.querySelector('.hint p').textContent = lesson.hint;
   $('load-lesson').onclick = () => {
     const name = `exercise-${String(index + 1).padStart(2, '0')}.c`;
     if (!(name in state.files)) state.files[name] = lesson.starter;
     selectFile(name); state.stdin = lesson.input; $('stdin').value = lesson.input; save();
-    toast('Starter opened. Complete the challenge, then Run code.'); editor.focus();
+    $('lesson-panel').close(); toast('Starter opened. Complete the challenge, then Run.'); editor.focus();
   };
 }
 function checkLesson() {
@@ -260,25 +269,76 @@ function checkLesson() {
 function download(name, content, mime = 'text/plain') {
   const url = URL.createObjectURL(new Blob([content], {type: mime})); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+function clearTerminal() { $('terminal-output').replaceChildren(); }
+function saveShortcut() { save(); toast(storageAvailable ? 'Saved in this browser' : 'Storage unavailable. Download a backup.'); }
+// Capture workspace shortcuts before editor bindings or browser defaults consume them.
+window.addEventListener('keydown', event => {
+  if (event.isComposing || document.querySelector('dialog[open]')) return;
+  const key = event.key.toLowerCase();
+  const mod = (event.metaKey || event.ctrlKey) && !event.altKey;
+  if (mod && key === 'enter') { event.preventDefault(); event.stopPropagation(); event.shiftKey ? compileOnly() : compileAndRun(); }
+  else if (event.metaKey && !event.ctrlKey && !event.altKey && key === 'k') { event.preventDefault(); event.stopPropagation(); clearTerminal(); }
+  else if (mod && key === 's') { event.preventDefault(); event.stopPropagation(); saveShortcut(); }
+  else if (event.ctrlKey && !event.metaKey && !event.altKey && key === 'l' && document.activeElement?.closest('.console-panel')) { event.preventDefault(); event.stopPropagation(); clearTerminal(); }
+  else if (event.ctrlKey && !event.metaKey && !event.altKey && key === 'c' && busy) { event.preventDefault(); event.stopPropagation(); stop(); }
+  else if (event.ctrlKey && !event.metaKey && event.code === 'Backquote') { event.preventDefault(); event.stopPropagation(); document.activeElement?.closest('.console-panel') ? editor.focus() : $('terminal-input').focus(); }
+}, true);
+function recallCommand(direction) {
+  const input = $('terminal-input');
+  if (historyIndex === commandHistory.length) historyDraft = input.value;
+  historyIndex = Math.max(0, Math.min(commandHistory.length, historyIndex + direction));
+  input.value = historyIndex === commandHistory.length ? historyDraft : commandHistory[historyIndex];
+  input.setSelectionRange(input.value.length, input.value.length);
+}
 $('run-btn').onclick = compileAndRun; $('compile-btn').onclick = compileOnly; $('stop-btn').onclick = () => stop();
-$('clear-btn').onclick = () => $('terminal-output').replaceChildren();
+$('clear-btn').onclick = clearTerminal;
+$('binary-btn').onclick = () => {
+  $('workspace-dialog').close();
+  return withBusy(async () => {
+    if (!compiledBinary || compiledSignature !== signature()) await compile();
+    download(`${executableName.replace(/\.wasm$/, '')}.wasm`, compiledBinary, 'application/wasm');
+    toast('WASI WebAssembly binary downloaded.');
+  });
+};
+$('workspace-btn').onclick = () => $('workspace-dialog').showModal();
+$('close-workspace').onclick = () => $('workspace-dialog').close();
 $('stdin').value = state.stdin; $('arguments').value = state.args; $('standard').value = state.standard; $('active-filename').textContent = state.active;
+$('download-btn').textContent = `Download ${state.active.endsWith('.h') ? '.h' : '.c'} file`;
+$('editor-standard').textContent = state.standard.toUpperCase(); $('theme').value = state.theme;
+$('theme').onchange = event => {
+  state.theme = event.target.value; document.documentElement.dataset.theme = state.theme;
+  document.querySelector('meta[name="theme-color"]').content = state.theme === 'dark' ? '#191c21' : '#fafafa';
+  editor.dispatch({effects: theme.reconfigure(editorTheme())}); save();
+};
 $('stdin').oninput = event => { state.stdin = event.target.value; saveSoon(); };
 $('arguments').oninput = event => { state.args = event.target.value; saveSoon(); };
-$('standard').onchange = event => { state.standard = event.target.value; save(); };
+$('standard').onchange = event => { state.standard = event.target.value; $('editor-standard').textContent = state.standard.toUpperCase(); save(); };
 $('terminal-form').onsubmit = async event => {
   event.preventDefault(); const text = $('terminal-input').value; $('terminal-input').value = '';
   if (waitingInput) return sendInput(text);
   if (busy) return;
-  commandHistory.push(text); historyIndex = commandHistory.length;
+  if (text.trim()) commandHistory.push(text); historyIndex = commandHistory.length; historyDraft = '';
   try { await command(text); } catch (error) { print(error.message + '\n', 'error'); }
 };
 $('terminal-input').onkeydown = event => {
-  if (event.ctrlKey && event.key.toLowerCase() === 'd') { event.preventDefault(); sendInput('', true); }
-  if (event.ctrlKey && event.key.toLowerCase() === 'c' && busy) { event.preventDefault(); stop(); }
-  if (!waitingInput && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) { event.preventDefault(); historyIndex = Math.max(0, Math.min(commandHistory.length, historyIndex + (event.key === 'ArrowUp' ? -1 : 1))); $('terminal-input').value = commandHistory[historyIndex] || ''; }
+  if (event.isComposing) return;
+  const input = event.currentTarget, key = event.key.toLowerCase();
+  if (event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (key === 'd' && waitingInput) { event.preventDefault(); sendInput('', true); return; }
+    if (key === 'c') { event.preventDefault(); input.value = ''; historyIndex = commandHistory.length; historyDraft = ''; return; }
+    if (!waitingInput && (key === 'p' || key === 'n')) { event.preventDefault(); recallCommand(key === 'p' ? -1 : 1); return; }
+    const start = input.selectionStart, end = input.selectionEnd;
+    if (key === 'a' || key === 'e') { event.preventDefault(); const at = key === 'a' ? 0 : input.value.length; input.setSelectionRange(at, at); }
+    if (!input.readOnly && ['u', 'k', 'w'].includes(key)) {
+      event.preventDefault();
+      const from = key === 'k' ? start : key === 'u' ? 0 : start - (input.value.slice(0, start).match(/\S+\s*$/)?.[0].length || start);
+      const to = key === 'k' ? input.value.length : end;
+      input.setRangeText('', from, to, 'start');
+    }
+  }
+  if (!busy && !event.metaKey && !event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) { event.preventDefault(); recallCommand(event.key === 'ArrowUp' ? -1 : 1); }
 };
-$('new-file').onclick = () => { $('file-name').value = ''; $('file-dialog').showModal(); $('file-name').focus(); };
+$('new-file').onclick = () => { $('workspace-dialog').close(); $('file-name').value = ''; $('file-dialog').showModal(); $('file-name').focus(); };
 $('cancel-file').onclick = () => $('file-dialog').close();
 $('file-form').onsubmit = event => {
   event.preventDefault(); const name = $('file-name').value.trim();
@@ -308,11 +368,10 @@ $('import-file').onchange = async event => {
   }
   event.target.value = '';
 };
-$('reference-btn').onclick = () => $('reference-dialog').showModal(); $('close-reference').onclick = () => $('reference-dialog').close();
-$('close-lesson').onclick = () => $('lesson-panel').classList.remove('open');
+$('reference-btn').onclick = () => { $('workspace-dialog').close(); $('reference-dialog').showModal(); }; $('close-reference').onclick = () => $('reference-dialog').close();
+$('close-lesson').onclick = () => $('lesson-panel').close();
 window.addEventListener('beforeunload', save);
-renderFiles(); renderLessons(); if (currentLesson != null) showLesson(currentLesson);
-print('Welcome to C Practice, Jean.\n', 'welcome'); print('Your first program is ready. Press Run code or ⌘ / Ctrl + Enter.\nType help to explore the terminal.\n\n');
+renderFiles(); renderLessons(); cursorStatus(editor);
 if (!storageAvailable) toast('Browser storage is unavailable. Download your code before leaving.');
 const isolated = globalThis.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined';
 $('interactive').checked = !!isolated; $('interactive').disabled = !isolated;
