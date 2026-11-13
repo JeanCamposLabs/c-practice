@@ -44,7 +44,8 @@ onmessage = async ({data}) => {
       });
       binary = files['main.wasm'];
       if (!binary) throw new Error('No executable was produced. Check your source files and compiler flags.');
-      emit('compiled', {ms: Math.round(performance.now() - start), size: binary.length});
+      // Structured cloning preserves the worker's copy for subsequent runs.
+      emit('compiled', {ms: Math.round(performance.now() - start), size: binary.length, binary});
     }
     if (data.type === 'run') {
       if (!binary) throw new Error('Compile your program first.');
