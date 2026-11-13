@@ -152,7 +152,8 @@ async function execute(args) {
   runContext = {lesson: currentLesson, input: state.stdin, source: state.files[state.active]};
   print(`❯ ./${executableName}${args?.length ? ' ' + args.join(' ') : ''}\n`, 'command');
   watchdog(10000, 'Stopped after 10 seconds of execution. Check for an endless loop.');
-  const result = await request('run', {stdin: state.stdin, args: args || splitArgs(state.args), inputBuffer});
+  const stdin = state.stdin && !state.stdin.endsWith('\n') ? state.stdin + '\n' : state.stdin;
+  const result = await request('run', {stdin, args: args || splitArgs(state.args), inputBuffer});
   waitingInput = false;
   if (programOutput && !programOutput.endsWith('\n')) print('\n', 'stdout');
   print(`Process exited with code ${result.code} · ${result.ms}ms\n`, result.code === 0 ? 'success' : 'error');
