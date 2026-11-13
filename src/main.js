@@ -124,7 +124,8 @@ function startWorker() {
       print(data.text, data.stream);
     }
     if (data.type === 'input') { waitingInput = true; clearTimeout(operationTimer); buttons(); status('Waiting for terminal input', 'loading'); $('terminal-input').focus(); }
-    if (data.type === 'running') { phase = 'run'; status('Program running', 'loading'); }
+    if (data.type === 'preparing-input') { status('Preparing terminal input…', 'loading'); watchdog(90000, 'Terminal input setup timed out. Please run again.'); }
+    if (data.type === 'running') { phase = 'run'; status('Program running', 'loading'); watchdog(10000, 'Stopped after 10 seconds of execution. Check for an endless loop.'); }
     if (data.type === 'compiled' || data.type === 'finished') { clearTimeout(operationTimer); const p = pending; pending = null; p?.resolve(data); }
     if (data.type === 'error') {
       clearTimeout(operationTimer); print(`\n${data.text}\n`, 'error'); status('Check the terminal for details', 'error');
@@ -155,13 +156,13 @@ async function compile(flags, sources) {
 }
 async function execute(args) {
   phase = 'run'; programOutput = ''; outputBytes = 0; waitingInput = false;
-  const live = $('interactive').checked && globalThis.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined';
-  inputBuffer = live ? new SharedArrayBuffer(65544) : null;
+  const live = $('interactive').checked;
+  inputBuffer = live && globalThis.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined' ? new SharedArrayBuffer(65544) : null;
   runContext = {lesson: currentLesson, input: state.stdin, source: state.files[state.active]};
   print(`❯ ./${executableName}${args?.length ? ' ' + args.join(' ') : ''}\n`, 'command');
   watchdog(10000, 'Stopped after 10 seconds of execution. Check for an endless loop.');
   const stdin = state.stdin && !state.stdin.endsWith('\n') ? state.stdin + '\n' : state.stdin;
-  const result = await request('run', {stdin, args: args || splitArgs(state.args), inputBuffer});
+  const result = await request('run', {stdin, args: args || splitArgs(state.args), inputBuffer, interactive: live});
   waitingInput = false;
   if (programOutput && !programOutput.endsWith('\n')) print('\n', 'stdout');
   print(`Process exited with code ${result.code} · ${result.ms}ms\n`, result.code === 0 ? 'success' : 'error');
@@ -220,15 +221,18 @@ async function command(text) {
   else print(`Unknown command: ${cmd}. Type help for available commands.\n`, 'error');
 }
 function sendInput(text, eof = false) {
-  if (!waitingInput || !inputBuffer) return;
+  if (!waitingInput) return;
   const data = new TextEncoder().encode(text + '\n');
   if (data.length > 65536) return toast('Please enter less than 64 KB at once.');
-  const control = new Int32Array(inputBuffer);
-  if (!eof) { new Uint8Array(inputBuffer, 8, data.length).set(data); Atomics.store(control, 1, data.length); print(text + '\n', 'input'); }
+  if (!eof) print(text + '\n', 'input');
   else print('[end of input]\n', 'info');
   waitingInput = false; buttons(); status('Program running', 'loading');
   watchdog(10000, 'Stopped after 10 seconds of execution. Check for an endless loop.');
-  Atomics.store(control, 0, eof ? 2 : 1); Atomics.notify(control, 0);
+  if (inputBuffer) {
+    const control = new Int32Array(inputBuffer);
+    if (!eof) { new Uint8Array(inputBuffer, 8, data.length).set(data); Atomics.store(control, 1, data.length); }
+    Atomics.store(control, 0, eof ? 2 : 1); Atomics.notify(control, 0);
+  } else worker.postMessage({type: 'stdin', bytes: data, eof});
 }
 function renderLessons() {
   $('lesson-list').replaceChildren();
@@ -373,15 +377,6 @@ $('close-lesson').onclick = () => $('lesson-panel').close();
 window.addEventListener('beforeunload', save);
 renderFiles(); renderLessons(); cursorStatus(editor);
 if (!storageAvailable) toast('Browser storage is unavailable. Download your code before leaving.');
-const isolated = globalThis.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined';
-$('interactive').checked = !!isolated; $('interactive').disabled = !isolated;
-$('input-mode-note').textContent = isolated ? 'Type directly in the terminal when prompted.' : 'Preloaded input works in this browser.';
+$('interactive').checked = true;
+$('input-mode-note').textContent = 'Type directly in the terminal when prompted. Turn off to use only preloaded input.';
 startWorker();
-// Add the headers needed for live stdin on static hosting. One initial reload installs them.
-if ('serviceWorker' in navigator && !isolated && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-  navigator.serviceWorker.register(new URL('isolation-sw.js', document.baseURI)).then(() => {
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!sessionStorage.getItem('c-practice-isolation-reload')) { save(); sessionStorage.setItem('c-practice-isolation-reload', '1'); location.reload(); }
-    });
-  }).catch(() => {});
-}

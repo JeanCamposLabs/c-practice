@@ -43,7 +43,7 @@ Arguments can be set in the workspace menu or supplied to `./main`. Quoted argum
 
 The complete compiler and standard library are self-hosted on GitHub Pages, with no third-party runtime CDNs or API keys. A dedicated worker runs the compiler and a small WASI Preview 1 console host runs compiled programs. Output goes to the terminal. Programs can be stopped immediately and are stopped automatically after 10 seconds of uninterrupted execution or 150 KB of output. Time spent waiting for live input does not count against the execution timeout.
 
-Live input uses `SharedArrayBuffer` with a service worker that adds the cross-origin isolation headers unavailable in GitHub Pages settings. The first visit may reload once to enable it. When a browser cannot enable isolation, preloaded input remains available. Use a current Chrome, Edge, Firefox, or Safari browser.
+Live terminal input is enabled by default. On pages with cross-origin isolation it uses shared memory; otherwise Binaryen Asyncify suspends the program and resumes it through worker messages. This fallback needs no service worker, special headers, or SharedArrayBuffer and downloads an additional 2.5 MB the first time it prepares an input-capable program. Prompts are flushed before waiting, including prompts without a final newline. Preloaded input is consumed first, then execution waits for terminal input until you submit a line or send EOF with Ctrl+D. Turning off Live terminal input explicitly selects preloaded-input-only execution. Use a current Chrome, Edge, Firefox, or Safari browser.
 
 This workspace is for standard C console programs: variables, conditions, loops, functions, arrays, strings, structs, pointers, dynamic allocation, and standard math. Networking, OS processes, threads, and persistent file I/O from compiled programs are outside this runtime. Editor files are kept separately in browser storage.
 
@@ -63,6 +63,6 @@ Compiler tests compile and execute real C for stdout/Unicode, stdin, `scanf`, ma
 
 ## Third-party software
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The vendored compiler is `@yowasp/clang@22.0.0-git20542-10`. The JavaScript loader is patched only to load gzip-compressed assets on static hosts and to support the same compressed files in Node tests. Compiler binaries are unmodified.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The input fallback is `binaryen@132.0.0`; regenerate its vendored asset with `npm run vendor:input`. The vendored compiler is `@yowasp/clang@22.0.0-git20542-10`. The JavaScript loader is patched only to load gzip-compressed assets on static hosts and to support the same compressed files in Node tests. Compiler binaries are unmodified.
 
 Compiler package SHA-1: `99e06cff031c57bc040b68ce0dbf41d239cde14c`.

@@ -8,6 +8,10 @@ Copies of the upstream toolchain and library license notices are shipped in `pub
 
 Changes to `public/toolchain/bundle.js`: fetch `.wasm.gz` and `.tar.gz` assets, decompress in the browser when the HTTP server has not already done so, and decompress local assets for Node tests. Wasm binaries and sysroot archive are unchanged apart from lossless gzip compression.
 
+## Binaryen
+
+The terminal input fallback uses [Binaryen](https://github.com/WebAssembly/binaryen), distributed as `binaryen@132.0.0` by [binaryen.js](https://github.com/AssemblyScript/binaryen.js), under Apache-2.0. Its unmodified JavaScript build is losslessly gzip-compressed in `public/toolchain/binaryen.js.gz`; the license is in `public/toolchain/LICENSE-BINARYEN.txt`. Reproduce both files with `npm ci` and `npm run vendor:input`. The Asyncify pass transforms an in-memory copy of a compiled program to suspend and resume input reads; the downloadable WASI executable is unchanged by that pass.
+
 ## CodeMirror
 
 The editor uses [CodeMirror 6](https://codemirror.net/), by Marijn Haverbeke and contributors, licensed under MIT. Dependency versions are pinned in `package-lock.json`. The bundled language support and one-dark theme carry the same MIT license. License copies are in `public/licenses/`.
