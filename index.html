@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#11171b" />
+  <meta name="description" content="Jean’s C practice workspace. Write, compile, and run C in your browser with a real Clang compiler." />
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <title>C Practice — Jean’s workspace</title>
+</head>
+<body>
+  <header class="app-header">
+    <a href="./" class="brand" aria-label="C Practice home"><span class="brand-symbol">C<span>_</span></span><span>C Practice<span class="brand-caption">A LITTLE CODE. EVERY DAY.</span></span></a>
+    <div class="workspace-name"><span class="tiny-dot"></span> Jean’s workspace</div>
+    <nav><button id="reference-btn" class="quiet-button">C reference <span>↗</span></button><a class="github-link" href="https://github.com/JeanCamposLabs/c-practice" target="_blank" rel="noopener">GitHub ↗</a></nav>
+  </header>
+  <main class="workspace">
+    <aside class="sidebar">
+      <div class="sidebar-heading"><span>EXPLORER</span><button id="new-file" title="New C or header file" aria-label="New file" class="icon-button">+</button></div>
+      <div class="folder-label"><span>⌄</span> <span class="folder-icon">▱</span> c-practice</div>
+      <div id="file-list" class="file-list"></div>
+      <div class="file-actions"><button id="import-btn">↑ Import</button><button id="download-btn">↓ Download</button></div>
+      <input type="file" id="import-file" accept=".c,.h,.json" multiple hidden />
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-heading"><span>PRACTICE PATH</span><span id="progress-count" class="progress-count">0 / 8</span></div>
+      <div class="progress-track"><div id="path-progress"></div></div>
+      <div id="lesson-list" class="lesson-list"></div>
+      <button id="backup-btn" class="backup-button">↓ Back up workspace</button>
+      <div class="sidebar-note"><span class="tiny-dot"></span><div>Your code stays here.<small>Autosaved in this browser.<br>Download a backup to keep it.</small></div></div>
+    </aside>
+    <section class="work-area">
+      <div class="welcome-bar"><div><span class="eyebrow">YOUR C WORKBENCH</span><h1>Make something work.</h1><p>Write it. Run it. Learn a little more.</p></div><span class="welcome-decoration" aria-hidden="true">{ <span>c</span> }</span></div>
+      <div class="toolbar">
+        <div class="toolbar-left"><label class="standard-label" for="standard">C standard</label><select id="standard" aria-label="C standard"><option value="c17">C17</option><option value="c11">C11</option><option value="c99">C99</option><option value="c23">C23</option></select></div>
+        <div class="toolbar-actions"><button id="compile-btn" class="secondary-button" title="Compile (Ctrl/⌘ + Shift + Enter)">⌘ <span>Compile</span></button><button id="stop-btn" class="stop-button" disabled>■ Stop</button><button id="run-btn" class="primary-button" title="Compile and run (Ctrl/⌘ + Enter)"><span>▶</span> Run code <kbd>⌘ ↵</kbd></button></div>
+      </div>
+      <section class="editor-panel" aria-label="C source editor">
+        <div class="editor-tabs"><div class="active-tab"><span class="c-icon">C</span><span id="active-filename">main.c</span><span id="saved-dot" title="Saved in browser">●</span></div><span id="save-status">All changes saved</span></div>
+        <div id="editor"></div>
+        <div class="editor-footer"><span id="cursor-position">Ln 1, Col 1</span><span>Spaces: 4 <span class="footer-divider">│</span> UTF-8 <span class="footer-divider">│</span> C</span></div>
+      </section>
+      <section class="console-panel" aria-label="Terminal and program input">
+        <div class="console-header"><div class="console-title"><span class="terminal-symbol">›_</span> TERMINAL <span id="terminal-badge">READY</span></div><button id="clear-btn" class="quiet-button" title="Clear terminal">Clear <span>⌫</span></button></div>
+        <div class="console-body"><div class="terminal-area"><div id="terminal-output" class="terminal-output" role="log" aria-live="polite" aria-label="Program output"></div><form id="terminal-form" class="terminal-prompt"><label for="terminal-input" id="prompt-symbol">❯</label><input id="terminal-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Terminal command or program input" placeholder="Type help for commands" /></form></div><div class="stdin-panel"><label for="stdin">PROGRAM INPUT <span>stdin</span></label><p>For <code>scanf</code> or <code>fgets</code>, enter values here before running.</p><textarea id="stdin" spellcheck="false" placeholder="e.g. Jean&#10;25" aria-label="Program input before running"></textarea><label class="input-mode"><input type="checkbox" id="interactive" /> Live terminal input</label><span id="input-mode-note">Checking browser support…</span><label class="args-label" for="arguments">Arguments</label><input id="arguments" placeholder="Optional: one two" aria-label="Program command line arguments" /></div></div>
+      </section>
+      <footer class="status-bar"><span id="compiler-status"><span class="tiny-dot"></span> Compiler starting…</span><span>Clang · WebAssembly <span class="footer-divider">│</span> Runs in your browser</span></footer>
+    </section>
+    <aside id="lesson-panel" class="lesson-panel">
+      <div class="lesson-top"><span class="eyebrow">LEARN BY DOING</span><button id="close-lesson" class="icon-button" aria-label="Close lesson">×</button></div>
+      <div id="lesson-content"></div>
+    </aside>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="file-dialog"><form id="file-form"><div class="eyebrow">A FRESH START</div><h2>Create a file</h2><label for="file-name">Filename</label><input id="file-name" placeholder="practice.c" required pattern="[a-zA-Z0-9_-]+\.(c|h)" /><p>Use a .c source file or a .h header file.</p><div class="dialog-actions"><button type="button" id="cancel-file" class="secondary-button">Cancel</button><button class="primary-button" type="submit">Create file</button></div></form></dialog>
+  <dialog id="reference-dialog"><div class="reference-header"><div><span class="eyebrow">KEEP THIS HANDY</span><h2>Your C pocket reference</h2></div><button id="close-reference" class="icon-button" aria-label="Close reference">×</button></div><div class="reference-grid"><article><h3>The shape of a program</h3><pre>#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("Hello!\n");
+    return 0;
+}</pre></article><article><h3>Types & format specifiers</h3><pre>int age = 25;         // %d
+double price = 9.99;   // %f
+char grade = 'A';     // %c
+char name[40];        // %s
+
+printf("%.2f\n", price);</pre></article><article><h3>Reading input</h3><pre>int number;
+if (scanf("%d", &amp;number) == 1) {
+    printf("%d\n", number);
+}
+// &amp; gives scanf the variable’s address.
+// Add input in the stdin panel or terminal.</pre></article><article><h3>Loops & decisions</h3><pre>for (int i = 0; i &lt; 5; i++) {
+    printf("%d\n", i);
+}
+if (age &gt;= 18) { puts("Adult"); }
+// == compares. = assigns.
+// Arrays start at index 0.</pre></article><article><h3>Functions & pointers</h3><pre>int square(int n) { return n * n; }
+
+int value = 7;
+int *p = &amp;value;
+printf("%d\n", *p);  // 7
+// Initialize pointers before using them.</pre></article><article><h3>Your workspace shortcuts</h3><pre>⌘ / Ctrl + Enter       Compile & run
+⌘ / Ctrl + Shift + Enter   Compile
+⌘ / Ctrl + S           Save locally
+⌘ / Ctrl + F           Find
+Ctrl + D               End live input
+Tab                    Indent</pre></article></div><p class="reference-footnote">Standard C console programs run here. OS processes, networking, threads, and persistent program file I/O are outside this browser runtime.</p></dialog>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
