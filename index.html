@@ -7,8 +7,8 @@
   <meta name="description" content="A minimal C editor and terminal. Write, compile, and run C in your browser." />
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <title>C Practice</title>
-  <script type="module" crossorigin src="./assets/index-BCmyh0os.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-9dYaNfmY.css">
+  <script type="module" crossorigin src="./assets/index-DvBBJcoU.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-v0pKY_50.css">
 </head>
 <body>
   <main id="workspace" class="workspace" data-view="split">
@@ -28,7 +28,7 @@
         </div>
       </header>
       <div id="editor"></div>
-      <div class="editor-footer"><span id="cursor-position">Ln 1, Col 1</span><span id="editor-standard">C17</span></div>
+      <div class="editor-footer"><span id="cursor-position">Ln 1, Col 1</span><button id="wrap-btn" aria-label="Toggle word wrap" aria-pressed="true" aria-keyshortcuts="Alt+z" title="Toggle word wrap (Option/Alt+Z)">Wrap: on</button><span id="editor-standard">C17</span></div>
     </section>
     <section class="console-panel" aria-label="Terminal">
       <header class="console-header">
@@ -99,6 +99,7 @@ printf("%d\n", *p);  // 7
 ⌘ / Ctrl + S             Save locally
 ⌘ / Ctrl + F             Find in editor
 Ctrl + `                 Switch editor / terminal
+Option / Alt + Z         Toggle word wrap
 ⌘ / Ctrl + Shift + 1     Toggle editor full screen
 ⌘ / Ctrl + Shift + 2     Toggle terminal full screen
 Escape                   Restore split view
